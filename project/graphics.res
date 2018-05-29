@@ -1,0 +1,1 @@
+SPRITE blue_blacksmith_spr "./gfx/blue_blacksmith.png" 8 8 NONE 0

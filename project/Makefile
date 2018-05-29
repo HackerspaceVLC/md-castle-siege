@@ -27,6 +27,7 @@ MKDIR= $(BIN)/mkdir
 include $(GENDEV)/sgdk/mkfiles/makefile.vars
 
 INCLUDE := include
+RES     = gfx
 
 SRC_C= $(wildcard *.c)
 SRC_C+= $(wildcard $(SRC)/*.c)
