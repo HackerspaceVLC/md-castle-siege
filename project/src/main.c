@@ -1,0 +1,8 @@
+#include <genesis.h>
+
+
+int main()
+{
+    return 1;
+}
+
