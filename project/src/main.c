@@ -4,10 +4,16 @@
 
 #define kPALETTE_INDEX_BACKGROUND          0
 #define kPALETTE_INDEX_BLUE_BUILDINGS      1
+#define kPALETTE_INDEX_RED_BUILDINGS       2
+#define kPALETTE_INDEX_GUI                 3
 
+typedef enum game_movement_state {
+    kGAME_MOVEMENT_STATE_SCROLL,
+    kGAME_MOVEMENT_STATE_SELECT,
+} TGAME_MOVEMENT_STATE;
 
 extern const u8 test_map_tiles[64*64];
-extern const s8 test_map_buildings[64*64];
+extern const s16 test_map_buildings[64*64];
 
 struct vector {
     s16 x;
@@ -58,6 +64,10 @@ static const struct vector scroll_by_direction[0xF] = {
 };
 
 static struct vector scroll_position;
+static TGAME_MOVEMENT_STATE movement_state = kGAME_MOVEMENT_STATE_SCROLL;
+static u8 previous_pad_state;
+static Sprite *selection_marker[4];
+static struct vector selection_marker_position;
 
 
 static inline void initSystem(void)
@@ -66,6 +76,7 @@ static inline void initSystem(void)
     SPR_init(0,0,0);
     VDP_setScrollingMode(HSCROLL_PLANE, VSCROLL_PLANE);
     VDP_setPlanSize(64, 64);
+    VDP_setTextPlan(PLAN_WINDOW);
     SYS_enableInts();
 }
 
@@ -97,7 +108,7 @@ static void drawBackground(void)
                 continue;
             }
 
-            VDP_setTileMapXY(PLAN_B, TILE_ATTR_FULL(PAL0 + kPALETTE_INDEX_BLUE_BUILDINGS,FALSE,FALSE,FALSE,
+            VDP_setTileMapXY(PLAN_B, TILE_ATTR_FULL(PAL0 + kPALETTE_INDEX_BLUE_BUILDINGS,TRUE,FALSE,FALSE,
                 TILE_USERINDEX + grass_tileset.numTile + current),
                 i, j);
         }
@@ -122,6 +133,16 @@ static inline void scrollMap(u8 pad_state)
 }
 
 
+static void switchMovementState(void)
+{
+    if (movement_state == kGAME_MOVEMENT_STATE_SCROLL) {
+        movement_state = kGAME_MOVEMENT_STATE_SELECT;
+    } else {
+        movement_state = kGAME_MOVEMENT_STATE_SCROLL;
+    }
+}
+
+
 int main()
 {
     u8 pad_state;
@@ -130,16 +151,33 @@ int main()
 
     VDP_setPalette(PAL0 + kPALETTE_INDEX_BACKGROUND, background_pal.data);
     VDP_setPalette(PAL0 + kPALETTE_INDEX_BLUE_BUILDINGS, blue_pal.data);
+    VDP_setPalette(PAL0 + kPALETTE_INDEX_GUI, gui_pal.data);
 
     drawBackground();
+
+    selection_marker_position.x = 16;
+    selection_marker_position.y = 8;
+
+    selection_marker[0] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x, selection_marker_position.y, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, FALSE, FALSE, FALSE));
+    selection_marker[1] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x+64, selection_marker_position.y, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, FALSE, FALSE, TRUE));
+    selection_marker[2] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x+64, selection_marker_position.y+64, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, FALSE, TRUE, TRUE));
+    selection_marker[3] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x, selection_marker_position.y+64, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, FALSE, TRUE, FALSE));
 
     while (1) {
         pad_state = JOY_readJoypad(JOY_1);
 
-        scrollMap(pad_state);
+        if (movement_state == kGAME_MOVEMENT_STATE_SCROLL) {
+            scrollMap(pad_state);
+        }
+
+        if (pad_state & BUTTON_C && !(previous_pad_state & BUTTON_C)) {
+            switchMovementState();
+        }
 
         SPR_update();
         VDP_waitVSync();
+
+        previous_pad_state = pad_state;
     }
 }
 
