@@ -7,17 +7,25 @@
 #define kPALETTE_INDEX_RED_BUILDINGS       2
 #define kPALETTE_INDEX_GUI                 3
 
+#define kMAX_BASE_NEIGHBORS                4
+#define kMAX_MAP_BASES                     2
+
+extern const u8 test_map_tiles[64*64];
+extern const s16 test_map_buildings[64*64];
+
 typedef enum game_movement_state {
     kGAME_MOVEMENT_STATE_SCROLL,
     kGAME_MOVEMENT_STATE_SELECT,
 } TGAME_MOVEMENT_STATE;
 
-extern const u8 test_map_tiles[64*64];
-extern const s16 test_map_buildings[64*64];
-
 struct vector {
     s16 x;
     s16 y;
+};
+
+struct __attribute__((packed)) base {
+    struct vector position;
+    struct base *neighbors[kMAX_BASE_NEIGHBORS];
 };
 
 static const struct vector scroll_by_direction[0xF] = {
@@ -64,11 +72,12 @@ static const struct vector scroll_by_direction[0xF] = {
 };
 
 static struct vector scroll_position;
-static TGAME_MOVEMENT_STATE movement_state = kGAME_MOVEMENT_STATE_SCROLL;
+static TGAME_MOVEMENT_STATE movement_state = kGAME_MOVEMENT_STATE_SELECT;
 static u8 previous_pad_state;
 static Sprite *selection_marker[4];
 static struct vector selection_marker_position;
-
+static struct base map_bases[kMAX_MAP_BASES];
+static u8 num_map_bases = sizeof(map_bases) / sizeof(struct base);
 
 static inline void initSystem(void)
 {
@@ -81,7 +90,7 @@ static inline void initSystem(void)
 }
 
 
-static void drawBackground(void)
+static inline void drawBackground(void)
 {
     u8 i, j;
     s16 current;
@@ -133,14 +142,71 @@ static inline void scrollMap(u8 pad_state)
 }
 
 
+static inline void changeSelection(u8 pad_state)
+{
+
+}
+
+static inline void hideSelectioMarker(void)
+{
+    SPR_setVisibility(selection_marker[0], HIDDEN);
+    SPR_setVisibility(selection_marker[1], HIDDEN);
+    SPR_setVisibility(selection_marker[2], HIDDEN);
+    SPR_setVisibility(selection_marker[3], HIDDEN);
+}
+
+static inline void showSelectioMarker(void)
+{
+    SPR_setVisibility(selection_marker[0], VISIBLE);
+    SPR_setVisibility(selection_marker[1], VISIBLE);
+    SPR_setVisibility(selection_marker[2], VISIBLE);
+    SPR_setVisibility(selection_marker[3], VISIBLE);
+}
+
 static void switchMovementState(void)
 {
     if (movement_state == kGAME_MOVEMENT_STATE_SCROLL) {
         movement_state = kGAME_MOVEMENT_STATE_SELECT;
+        showSelectioMarker();
     } else {
         movement_state = kGAME_MOVEMENT_STATE_SCROLL;
+        hideSelectioMarker();
     }
 }
+
+
+static inline void initSelectionMarker(void)
+{
+    selection_marker_position.x = map_bases[0].position.x;
+    selection_marker_position.y = map_bases[0].position.y;
+
+    selection_marker[0] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x, selection_marker_position.y, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, TRUE, FALSE, FALSE));
+    selection_marker[1] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x+64, selection_marker_position.y, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, TRUE, FALSE, TRUE));
+    selection_marker[2] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x+64, selection_marker_position.y+64, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, TRUE, TRUE, TRUE));
+    selection_marker[3] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x, selection_marker_position.y+64, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, TRUE, TRUE, FALSE));
+}
+
+
+static inline void initMapBases(void)
+{
+    map_bases[0].position.x = 8;
+    map_bases[0].position.y = 16;
+    map_bases[0].neighbors[0] = &map_bases[1];
+
+    map_bases[1].position.x = 216;
+    map_bases[1].position.y = 40;
+    map_bases[1].neighbors[0] = &map_bases[0];
+}
+
+
+static inline void initPalettes(void)
+{
+    VDP_setPalette(PAL0 + kPALETTE_INDEX_BACKGROUND, background_pal.data);
+    VDP_setPalette(PAL0 + kPALETTE_INDEX_BLUE_BUILDINGS, blue_pal.data);
+    VDP_setPalette(PAL0 + kPALETTE_INDEX_GUI, gui_pal.data);
+}
+
+
 
 
 int main()
@@ -148,20 +214,10 @@ int main()
     u8 pad_state;
 
     initSystem();
-
-    VDP_setPalette(PAL0 + kPALETTE_INDEX_BACKGROUND, background_pal.data);
-    VDP_setPalette(PAL0 + kPALETTE_INDEX_BLUE_BUILDINGS, blue_pal.data);
-    VDP_setPalette(PAL0 + kPALETTE_INDEX_GUI, gui_pal.data);
-
+    initPalettes();
+    initMapBases();
+    initSelectionMarker();
     drawBackground();
-
-    selection_marker_position.x = 16;
-    selection_marker_position.y = 8;
-
-    selection_marker[0] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x, selection_marker_position.y, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, FALSE, FALSE, FALSE));
-    selection_marker[1] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x+64, selection_marker_position.y, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, FALSE, FALSE, TRUE));
-    selection_marker[2] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x+64, selection_marker_position.y+64, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, FALSE, TRUE, TRUE));
-    selection_marker[3] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x, selection_marker_position.y+64, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, FALSE, TRUE, FALSE));
 
     while (1) {
         pad_state = JOY_readJoypad(JOY_1);
