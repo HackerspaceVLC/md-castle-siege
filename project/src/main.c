@@ -10,6 +10,14 @@
 #define kMAX_BASE_NEIGHBORS                4
 #define kMAX_MAP_BASES                     2
 
+#define kNEIGHBOR_POSITION_UP              0
+#define kNEIGHBOR_POSITION_DOWN            1
+#define kNEIGHBOR_POSITION_LEFT            2
+#define kNEIGHBOR_POSITION_RIGHT           3
+#define kNEIGHBOR_POSITION_NONE            4
+
+#define GET_BUTTON_DOWN(s,x,p)          ((s) & (x) && !((p) & (x)))
+
 extern const u8 test_map_tiles[64*64];
 extern const s16 test_map_buildings[64*64];
 
@@ -72,11 +80,13 @@ static const struct vector scroll_by_direction[0xF] = {
 };
 
 static struct vector scroll_position;
+static struct vector last_scroll_position;
 static TGAME_MOVEMENT_STATE movement_state = kGAME_MOVEMENT_STATE_SELECT;
 static u8 previous_pad_state;
 static Sprite *selection_marker[4];
 static struct vector selection_marker_position;
 static struct base map_bases[kMAX_MAP_BASES];
+static struct base *current_base;
 static u8 num_map_bases = sizeof(map_bases) / sizeof(struct base);
 
 static inline void initSystem(void)
@@ -127,6 +137,15 @@ static inline void drawBackground(void)
 }
 
 
+static inline void moveCamera(s16 x, s16 y)
+{
+    VDP_setHorizontalScroll(PLAN_A, x);
+    VDP_setVerticalScroll(PLAN_A, y);
+    VDP_setHorizontalScroll(PLAN_B, x);
+    VDP_setVerticalScroll(PLAN_B, y);
+}
+
+
 static inline void scrollMap(u8 pad_state)
 {
     struct vector scroll;
@@ -135,17 +154,9 @@ static inline void scrollMap(u8 pad_state)
     scroll_position.x += scroll.x;
     scroll_position.y += scroll.y;
         
-    VDP_setHorizontalScroll(PLAN_A, scroll_position.x);
-    VDP_setVerticalScroll(PLAN_A, scroll_position.y);
-    VDP_setHorizontalScroll(PLAN_B, scroll_position.x);
-    VDP_setVerticalScroll(PLAN_B, scroll_position.y);
+    moveCamera(scroll_position.x, scroll_position.y);
 }
 
-
-static inline void changeSelection(u8 pad_state)
-{
-
-}
 
 static inline void hideSelectioMarker(void)
 {
@@ -175,27 +186,42 @@ static void switchMovementState(void)
 }
 
 
+static inline void moveSelectionMarker(void)
+{
+    selection_marker_position.x = current_base->position.x - scroll_position.x;
+    selection_marker_position.y = current_base->position.y - scroll_position.y;
+
+    SPR_setPosition(selection_marker[0], selection_marker_position.x, selection_marker_position.y);
+    SPR_setPosition(selection_marker[1], selection_marker_position.x + 64, selection_marker_position.y);
+    SPR_setPosition(selection_marker[2], selection_marker_position.x + 64, selection_marker_position.y + 64);
+    SPR_setPosition(selection_marker[3], selection_marker_position.x, selection_marker_position.y + 64);
+}
+
+
 static inline void initSelectionMarker(void)
 {
-    selection_marker_position.x = map_bases[0].position.x;
-    selection_marker_position.y = map_bases[0].position.y;
+    selection_marker_position.x = current_base->position.x;
+    selection_marker_position.y = current_base->position.y;
 
     selection_marker[0] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x, selection_marker_position.y, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, TRUE, FALSE, FALSE));
     selection_marker[1] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x+64, selection_marker_position.y, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, TRUE, FALSE, TRUE));
     selection_marker[2] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x+64, selection_marker_position.y+64, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, TRUE, TRUE, TRUE));
     selection_marker[3] = SPR_addSprite(&selection_marker_spr, selection_marker_position.x, selection_marker_position.y+64, TILE_ATTR(PAL0 + kPALETTE_INDEX_GUI, TRUE, TRUE, FALSE));
+
 }
 
 
 static inline void initMapBases(void)
 {
-    map_bases[0].position.x = 8;
-    map_bases[0].position.y = 16;
-    map_bases[0].neighbors[0] = &map_bases[1];
+    map_bases[0].position.x = 12;
+    map_bases[0].position.y = 8;
+    map_bases[0].neighbors[kNEIGHBOR_POSITION_RIGHT] = &map_bases[1];
 
-    map_bases[1].position.x = 216;
-    map_bases[1].position.y = 40;
-    map_bases[1].neighbors[0] = &map_bases[0];
+    map_bases[1].position.x = 212;
+    map_bases[1].position.y = 44;
+    map_bases[1].neighbors[kNEIGHBOR_POSITION_LEFT] = &map_bases[0];
+
+    current_base = &map_bases[0];
 }
 
 
@@ -207,6 +233,42 @@ static inline void initPalettes(void)
 }
 
 
+static inline void moveBase(u8 pad_state)
+{
+    u8 target_base = kNEIGHBOR_POSITION_NONE;
+
+    if (GET_BUTTON_DOWN(pad_state, BUTTON_DOWN, previous_pad_state)) {
+        target_base = target_base = kNEIGHBOR_POSITION_DOWN;
+    }
+
+    if (GET_BUTTON_DOWN(pad_state, BUTTON_UP, previous_pad_state)) {
+        target_base = target_base = kNEIGHBOR_POSITION_UP;
+    }
+
+    if (GET_BUTTON_DOWN(pad_state, BUTTON_LEFT, previous_pad_state)) {
+        target_base = kNEIGHBOR_POSITION_LEFT;
+    }
+
+    if (GET_BUTTON_DOWN(pad_state, BUTTON_RIGHT, previous_pad_state)) {
+        target_base = kNEIGHBOR_POSITION_RIGHT;
+    }
+
+    if (target_base == kNEIGHBOR_POSITION_NONE) {
+        return;
+    }
+
+    if (current_base->neighbors[target_base] == NULL)  {
+        return;
+    }
+
+    current_base = current_base->neighbors[target_base];
+    moveSelectionMarker();
+
+    scroll_position.x = -current_base->position.x + 120;
+    scroll_position.y = current_base->position.y - 80;
+
+    moveCamera(scroll_position.x, scroll_position.y);
+}
 
 
 int main()
@@ -224,9 +286,14 @@ int main()
 
         if (movement_state == kGAME_MOVEMENT_STATE_SCROLL) {
             scrollMap(pad_state);
+            moveSelectionMarker();
         }
 
-        if (pad_state & BUTTON_C && !(previous_pad_state & BUTTON_C)) {
+        if (movement_state == kGAME_MOVEMENT_STATE_SELECT) {
+            moveBase(pad_state);
+        }
+
+        if (GET_BUTTON_DOWN(BUTTON_C, pad_state, previous_pad_state)) {
             switchMovementState();
         }
 
